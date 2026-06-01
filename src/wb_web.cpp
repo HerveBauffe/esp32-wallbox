@@ -892,6 +892,7 @@ static void handleSettings() {
     // freed as soon as the chunk is on the wire, and never has to
     // be reallocated past 65 KB.
     http.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    http.sendHeader("Transfer-Encoding", "chunked");
     http.send(200, "text/html", "");
     http.sendContent(htmlHead("Settings"));
     http.sendContent(R"HTML(
