@@ -268,6 +268,9 @@ static String htmlHead(const char* title = "Wallbox Gateway") {
         ".wb-overlay-card h3{margin:0 0 6px;font-size:1.05em;color:#e2e8f0;font-weight:600}"
         ".wb-overlay-card p{margin:4px 0;color:#94a3b8;font-size:.85em}"
         ".wb-overlay-card .wb-overlay-hint{color:#64748b;font-size:.78em;margin-top:14px}"
+        ".wb-overlay-skip{margin-top:14px;background:none;border:1px solid #2a2d3a;border-radius:6px;"
+        "color:#60a5fa;font-size:.8em;padding:6px 16px;cursor:pointer}"
+        ".wb-overlay-skip:hover{background:#1e293b}"
         ".wb-overlay-spin{width:36px;height:36px;border:3px solid #2a2d3a;"
         "border-top-color:#3b82f6;border-radius:50%;animation:sp 1s linear infinite;margin:0 auto 14px}"
         ".wb-overlay-bar-bg{width:100%;height:8px;background:#2a2d3a;border-radius:4px;"
@@ -372,6 +375,7 @@ static String htmlHead(const char* title = "Wallbox Gateway") {
              "<p id='wb-boot-stage'>Initializing</p>"
              "<div class='wb-overlay-bar-bg'><div id='wb-boot-bar' class='wb-overlay-bar'></div></div>"
              "<p id='wb-boot-hint' class='wb-overlay-hint'>This usually takes 5&ndash;15 seconds after a reboot.</p>"
+             "<button class='wb-overlay-skip' id='wb-skip-btn' onclick=\"document.getElementById('wb-boot-overlay').classList.remove('show')\">Skip</button>"
              "</div></div>";
     }
     h += "<div class='container'>"
@@ -415,20 +419,6 @@ static String htmlHead(const char* title = "Wallbox Gateway") {
          "var BOOT_HINT='This usually takes 5\\u201315 seconds after a reboot.';"
          "function show(){if(O)O.classList.add('show')}"
          "function hide(){if(O)O.classList.remove('show')}"
-         // 15s timeout: if BLE still not connected, show bypass button
-         "var _overlayTimer=setTimeout(function(){"
-             "if(O&&O.classList.contains('show')){"
-                 "if(H)H.innerHTML='Taking longer than expected. '"
-                     "+'<a href=\\'#\\' id=\\'wb-skip\\' style=\\'color:#60a5fa;text-decoration:underline\\'>Skip and continue</a>';"
-                 "var sk=document.getElementById('wb-skip');"
-                 "if(sk)sk.addEventListener('click',function(e){"
-                     "e.preventDefault();"
-                     "hide();"
-                 "});"
-             "}"
-         "},15000);"
-         // Clear timer if BLE connects normally
-         "function _clearOverlayTimer(){if(_overlayTimer){clearTimeout(_overlayTimer);_overlayTimer=null;}}"
          "if(window.wbws){window.wbws.subscribe('ble',function(d){"
              "var s=document.getElementById('ble-bar-state');if(s)s.textContent=d.state;"
              "var r=document.getElementById('ble-bar-rssi');if(r)r.textContent=(d.state==='connected'&&d.rssi>-127)?(' ('+d.rssi+' dBm)'):'';"
@@ -445,7 +435,6 @@ static String htmlHead(const char* title = "Wallbox Gateway") {
                  // 100% then fade out — reset mode so the next time
                  // the overlay reappears (e.g. after a reboot) it
                  // starts fresh in boot mode.
-                 "_clearOverlayTimer();"
                  "setTimeout(function(){hide();mode='boot'},600)"
              "}else if(mode==='boot'){show()}"
          "});}"
