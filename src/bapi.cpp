@@ -100,7 +100,7 @@ int ResponseParser::responseId() const {
 bool ResponseParser::isError() const {
     JsonDocument doc;
     if (deserializeJson(doc, _buf) != DeserializationError::Ok) return false;
-    return doc.containsKey("error");
+    return !doc["error"].isNull();
 }
 
 } // namespace bapi

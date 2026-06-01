@@ -415,6 +415,20 @@ static String htmlHead(const char* title = "Wallbox Gateway") {
          "var BOOT_HINT='This usually takes 5\\u201315 seconds after a reboot.';"
          "function show(){if(O)O.classList.add('show')}"
          "function hide(){if(O)O.classList.remove('show')}"
+         // 15s timeout: if BLE still not connected, show bypass button
+         "var _overlayTimer=setTimeout(function(){"
+             "if(O&&O.classList.contains('show')){"
+                 "if(H)H.innerHTML='Taking longer than expected. '"
+                     "+'<a href=\\'#\\' id=\\'wb-skip\\' style=\\'color:#60a5fa;text-decoration:underline\\'>Skip and continue</a>';"
+                 "var sk=document.getElementById('wb-skip');"
+                 "if(sk)sk.addEventListener('click',function(e){"
+                     "e.preventDefault();"
+                     "hide();"
+                 "});"
+             "}"
+         "},15000);"
+         // Clear timer if BLE connects normally
+         "function _clearOverlayTimer(){if(_overlayTimer){clearTimeout(_overlayTimer);_overlayTimer=null;}}"
          "if(window.wbws){window.wbws.subscribe('ble',function(d){"
              "var s=document.getElementById('ble-bar-state');if(s)s.textContent=d.state;"
              "var r=document.getElementById('ble-bar-rssi');if(r)r.textContent=(d.state==='connected'&&d.rssi>-127)?(' ('+d.rssi+' dBm)'):'';"
@@ -431,6 +445,7 @@ static String htmlHead(const char* title = "Wallbox Gateway") {
                  // 100% then fade out — reset mode so the next time
                  // the overlay reappears (e.g. after a reboot) it
                  // starts fresh in boot mode.
+                 "_clearOverlayTimer();"
                  "setTimeout(function(){hide();mode='boot'},600)"
              "}else if(mode==='boot'){show()}"
          "});}"
@@ -736,7 +751,7 @@ static void handleApiCommand() {
         http.send(503, "application/json", "{\"error\":\"busy\",\"retry\":true}");
         return;
     }
-    _apiCmdInflight++;
+    _apiCmdInflight = _apiCmdInflight + 1;
     String action = http.arg("action");
     String value = http.arg("value");
     String resp;
@@ -752,11 +767,11 @@ static void handleApiCommand() {
         if (par.isEmpty()) par = "null";
         resp = wallboxBLE.sendCommand(met.c_str(), par.c_str());
     } else {
-        _apiCmdInflight--;
+        _apiCmdInflight = _apiCmdInflight - 1;
         http.send(400, "application/json", "{\"error\":\"unknown action\"}");
         return;
     }
-    _apiCmdInflight--;
+    _apiCmdInflight = _apiCmdInflight - 1;
     http.send(200, "application/json", resp.isEmpty() ? "{\"error\":\"timeout\"}" : resp);
 }
 
@@ -3002,10 +3017,10 @@ void WBWebServer::beginSTA() {
 
 void WBWebServer::loop() {
     if (_apMode) dns.processNextRequest();
-    g_webReentryDepth++;
+    g_webReentryDepth = g_webReentryDepth + 1;
     if (g_webReentryDepth > g_webMaxReentry) g_webMaxReentry = g_webReentryDepth;
     http.handleClient();
-    g_webReentryDepth--;
+    g_webReentryDepth = g_webReentryDepth - 1;
     if (_rebootRequested) {
         static uint32_t rt = 0;
         if (rt == 0) rt = millis();

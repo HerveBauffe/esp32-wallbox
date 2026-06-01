@@ -350,7 +350,7 @@ void WallboxBLE::_connect() {
     }
 
     // Subscribe to notifications — if CCCD write is rejected, encrypt and retry
-    bool notifyOk = notifyChr->canNotify() && notifyChr->registerForNotify(_notifyCb);
+    bool notifyOk = notifyChr->canNotify() && notifyChr->subscribe(_notifyCb);
     if (!notifyOk && notifyChr->canNotify()) {
         Log.println("[BLE] CCCD rejected, trying SMP encryption...");
         delay(200);
@@ -359,7 +359,7 @@ void WallboxBLE::_connect() {
             // NimBLE 1.4.1 can return from secureConnection() before bond
             // info fully lands — give it a moment before the CCCD retry
             delay(200);
-            notifyOk = notifyChr->registerForNotify(_notifyCb);
+            notifyOk = notifyChr->subscribe(_notifyCb);
         } else {
             Log.printf("[BLE] Encryption failed (err 0x%02x)\n", _client->getLastError());
         }

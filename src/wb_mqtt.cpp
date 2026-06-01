@@ -320,7 +320,7 @@ void WallboxMQTT::_mqttCallback(char* topic, byte* payload, unsigned int len) {
             const char* met = doc["met"];
             if (met) {
                 String par = "null";
-                if (doc.containsKey("par") && !doc["par"].isNull()) {
+                if (!doc["par"].isNull()) {
                     serializeJson(doc["par"], par);
                 }
                 String resp = wallboxBLE.sendCommand(met, par.c_str());

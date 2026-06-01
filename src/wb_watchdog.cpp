@@ -1,36 +1,37 @@
 #include "wb_watchdog.h"
-#include "wb_log.h"
+#include "esp_task_wdt.h"
+#include "esp_idf_version.h"
+
+static uint32_t _origTimeoutS = 5;
 
 namespace wb_wdt {
 
-// Original (= "default") timeout the WDT was running at before any
-// extendTo() call. We snapshot it on first extend so restore() can put
-// it back to exactly that. Initialised lazily because the project's
-// boot path can call extendTo() at any time.
-static uint32_t _origTimeoutS = DEFAULT_WDT_TIMEOUT_S;
-static bool     _extended     = false;
+void capture() {
+    _origTimeoutS = 5;
+}
 
 void extendTo(uint32_t seconds) {
-    if (!_extended) {
-        // Nothing extended yet — capture the *current* default. We don't
-        // have a getter on older Arduino-ESP32, so trust the project-wide
-        // default declared in the header (matches what main.cpp uses).
-        _origTimeoutS = DEFAULT_WDT_TIMEOUT_S;
-    }
-    // esp_task_wdt_init() with the same args twice is fine — it just
-    // reapplies. `panic=false` matches the OTA path: we don't want the
-    // device to panic-reboot during a long erase, just to extend the
-    // grace period.
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    esp_task_wdt_config_t cfg;
+    cfg.timeout_ms    = seconds * 1000;
+    cfg.idle_core_mask = 0;
+    cfg.trigger_panic  = false;
+    esp_task_wdt_reconfigure(&cfg);
+#else
     esp_task_wdt_init(seconds, false);
-    _extended = true;
-    Log.printf("[WDT] Extended to %us\n", (unsigned)seconds);
+#endif
 }
 
 void restore() {
-    if (!_extended) return;
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    esp_task_wdt_config_t cfg;
+    cfg.timeout_ms    = _origTimeoutS * 1000;
+    cfg.idle_core_mask = 0;
+    cfg.trigger_panic  = false;
+    esp_task_wdt_reconfigure(&cfg);
+#else
     esp_task_wdt_init(_origTimeoutS, false);
-    _extended = false;
-    Log.printf("[WDT] Restored to %us\n", (unsigned)_origTimeoutS);
+#endif
 }
 
-}  // namespace wb_wdt
+} // namespace wb_wdt

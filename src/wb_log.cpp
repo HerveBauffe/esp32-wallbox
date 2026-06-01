@@ -14,7 +14,7 @@ void TelnetLog::loop() {
 
     // Accept new connections
     if (_server->hasClient()) {
-        WiFiClient incoming = _server->available();
+        WiFiClient incoming = _server->accept();
         int slot = -1;
         for (int i = 0; i < MAX_CLIENTS; i++) {
             if (!_clients[i] || !_clients[i].connected()) {
