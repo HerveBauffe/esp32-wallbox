@@ -255,28 +255,7 @@ static String htmlHead(const char* title = "Wallbox Gateway") {
         // Boot overlay — covers the page while the gateway is still
         // coming up (BLE handshake/init takes ~3–8s after a reboot).
         // Prevents users from navigating, firing BAPI calls, or
-        // hammering refresh during the window where requests would
-        // return "BLE not connected" or queue against a busy mutex.
-        // Hidden as soon as WS pushes ble.state === 'connected'.
-        ".wb-overlay{position:fixed;inset:0;background:rgba(15,17,23,.94);"
-        "-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);"
-        "z-index:500;display:none;align-items:center;justify-content:center;padding:20px}"
-        ".wb-overlay.show{display:flex}"
-        ".wb-overlay-card{background:#1a1d28;border:1px solid #2a2d3a;border-radius:14px;"
-        "padding:24px 28px;max-width:380px;width:100%;text-align:center;"
-        "box-shadow:0 16px 48px rgba(0,0,0,.5)}"
-        ".wb-overlay-card h3{margin:0 0 6px;font-size:1.05em;color:#e2e8f0;font-weight:600}"
-        ".wb-overlay-card p{margin:4px 0;color:#94a3b8;font-size:.85em}"
-        ".wb-overlay-card .wb-overlay-hint{color:#64748b;font-size:.78em;margin-top:14px}"
-        ".wb-overlay-skip{margin-top:14px;background:none;border:1px solid #2a2d3a;border-radius:6px;"
-        "color:#60a5fa;font-size:.8em;padding:6px 16px;cursor:pointer}"
-        ".wb-overlay-skip:hover{background:#1e293b}"
-        ".wb-overlay-spin{width:36px;height:36px;border:3px solid #2a2d3a;"
-        "border-top-color:#3b82f6;border-radius:50%;animation:sp 1s linear infinite;margin:0 auto 14px}"
-        ".wb-overlay-bar-bg{width:100%;height:8px;background:#2a2d3a;border-radius:4px;"
-        "margin:14px 0 6px;overflow:hidden}"
-        ".wb-overlay-bar{height:100%;background:linear-gradient(90deg,#3b82f6,#4fc3f7);"
-        "width:5%;transition:width .4s ease;border-radius:4px}"
+        "// overlay removed\n"
         "</style>";
     // Cache-bust CSS/JS with boot time (unique per firmware build + boot)
     static String buildVer;
@@ -354,30 +333,6 @@ static String htmlHead(const char* title = "Wallbox Gateway") {
     // wasn't "connected", and there was no BLE task to push a `connected`
     // event over WS to dismiss it — page appeared permanently stuck.
     // Rendering the overlay HTML at all in setup mode means the JS that
-    // follows could still re-show it on a WS-drop watchdog tick. Cleanest
-    // fix: omit the overlay markup entirely when we know there's no BLE
-    // to wait for.
-    bool inSetupMode = webServer.isAPMode() || !configMgr.hasBLE();
-    bool bootReady = (bleState == "connected");
-    if (!inSetupMode) {
-        h += "<div id='wb-boot-overlay' class='wb-overlay";
-        h += bootReady ? "" : " show";
-        h += "'><div class='wb-overlay-card'>"
-             "<div class='wb-overlay-spin'></div>"
-             // Title and subtitle are both JS-controlled — they say
-             // "Wallbox Gateway is starting" only during an actual cold
-             // boot / BLE-disconnected state. Navigation transitions show
-             // "Loading…" and WS-drop reconnections show "Reconnecting…"
-             // so users don't see a misleading boot screen during a
-             // quick page change.
-             "<div id='wb-boot-title' style='font-size:1.05em;font-weight:600;color:#e2e8f0;margin:0 0 6px'>"
-             "Wallbox Gateway is starting</div>"
-             "<p id='wb-boot-stage'>Initializing</p>"
-             "<div class='wb-overlay-bar-bg'><div id='wb-boot-bar' class='wb-overlay-bar'></div></div>"
-             "<p id='wb-boot-hint' class='wb-overlay-hint'>This usually takes 5&ndash;15 seconds after a reboot.</p>"
-             "<button class='wb-overlay-skip' id='wb-skip-btn' onclick=\"document.getElementById('wb-boot-overlay').classList.remove('show')\">Skip</button>"
-             "</div></div>";
-    }
     h += "<div class='container'>"
         "<div class='ble-bar'><span class='ble-dot'></span>BLE: <span id='ble-bar-state'>";
     h += bleState;
@@ -387,96 +342,12 @@ static String htmlHead(const char* title = "Wallbox Gateway") {
         h += " (" + String(rssi) + " dBm)";
     }
     h += "</span></div>";
-    // Keep the banner live — subscribe to the same 'ble' WS push the page
-    // bodies use, so banner + Gateway-card BLE Signal always agree.
-    // Also drive the boot overlay: state→progress map below mirrors the
-    // sequence in WallboxBLE::stateStr(). When connected, overlay fades
-    // out after a short delay so the user sees a 100% finish.
+    // Keep the ble-bar live via WS pushes.
     h += "<script>(function(){"
-         "var O=document.getElementById('wb-boot-overlay');"
-         "var B=document.getElementById('wb-boot-bar');"
-         "var S=document.getElementById('wb-boot-stage');"
-         "var T=document.getElementById('wb-boot-title');"
-         "var H=document.getElementById('wb-boot-hint');"
-         // Overlay has three independent modes; the active one decides
-         // what title/hint is shown. WS BLE pushes update the progress
-         // bar + stage text regardless, but title/hint are only
-         // touched in 'boot' mode so a click-nav 'Loading' or
-         // watchdog 'Reconnecting' isn't clobbered when the next ble
-         // event arrives.
-         "var mode='boot';"
-         "var M={'disconnected':{p:20,t:'Searching for charger\xE2\x80\xA6'},"
-                 "'connecting':{p:50,t:'Connecting to charger\xE2\x80\xA6'},"
-                 "'authenticating':{p:75,t:'Authenticating\xE2\x80\xA6'},"
-                 "'connected':{p:100,t:'Ready'},"
-                 "'error':{p:15,t:'Retrying\xE2\x80\xA6'},"
-                 "'unknown':{p:10,t:'Starting up\xE2\x80\xA6'}};"
-         "var BOOT_TITLE='Wallbox Gateway is starting';"
-         // 5–15 uses a JS Unicode escape (parsed by the browser)
-         // rather than the equivalent \xE2\x80\x93 C++ hex escape,
-         // which the compiler ate as one variable-length escape
-         // (\x9315) and produced garbage bytes in the binary.
-         "var BOOT_HINT='This usually takes 5\\u201315 seconds after a reboot.';"
-         "function show(){if(O)O.classList.add('show')}"
-         "function hide(){if(O)O.classList.remove('show')}"
          "if(window.wbws){window.wbws.subscribe('ble',function(d){"
              "var s=document.getElementById('ble-bar-state');if(s)s.textContent=d.state;"
              "var r=document.getElementById('ble-bar-rssi');if(r)r.textContent=(d.state==='connected'&&d.rssi>-127)?(' ('+d.rssi+' dBm)'):'';"
-             "var m=M[d.state]||M['disconnected'];"
-             // bar + stage track real BLE state in all modes; the
-             // title/hint only follow BLE state in boot mode.
-             "if(B)B.style.width=m.p+'%';"
-             "if(mode==='boot'){"
-                 "if(S)S.textContent=m.t;"
-                 "if(T)T.textContent=BOOT_TITLE;"
-                 "if(H)H.textContent=BOOT_HINT;"
-             "}"
-             "if(d.state==='connected'){"
-                 // 100% then fade out — reset mode so the next time
-                 // the overlay reappears (e.g. after a reboot) it
-                 // starts fresh in boot mode.
-                 "setTimeout(function(){hide();mode='boot'},600)"
-             "}else if(mode==='boot'){show()}"
          "});}"
-         // Watchdog: only fires after WS has been confirmed open at
-         // least once (wasOpen starts false). A genuine open→closed
-         // transition means the gateway disappeared — switch to
-         // 'reconnect' mode so subsequent BLE pushes don't reset the
-         // title back to 'Wallbox Gateway is starting'.
-         "var wasOpen=false;setInterval(function(){"
-             "var on=window.wbws&&window.wbws.isOpen();"
-             "if(on)wasOpen=true;"
-             "else if(wasOpen){"
-                 "mode='reconnect';"
-                 "if(T)T.textContent='Reconnecting to gateway';"
-                 "if(S)S.textContent='Please wait\xE2\x80\xA6';"
-                 "if(H)H.textContent='The gateway will return in a few seconds.';"
-                 "if(B)B.style.width='5%';"
-                 "show()"
-             "}"
-         "},1500);"
-         // Nav-click loading hint — switch into 'nav' mode so the WS
-         // 'ble' handler above won't overwrite the title back to the
-         // boot string. 150ms deferred show: fast page transitions
-         // (paint-hold or cache-hit nav) finish before the timer
-         // fires, so the user never sees a flash of overlay. Slow
-         // navs (cold-cache HTML download + parse) fire the overlay.
-         // The browser tearing down the page on navigation cancels
-         // pending setTimeout, so a successful fast nav guarantees
-         // the timer never runs.
-         "document.addEventListener('click',function(e){"
-             "var t=e.target;while(t&&t.nodeName!=='A')t=t.parentNode;"
-             "if(!t||!t.href||t.target||t.host!==location.host)return;"
-             "if(t.getAttribute('href').charAt(0)==='#')return;"
-             "setTimeout(function(){"
-                 "mode='nav';"
-                 "if(T)T.textContent='Loading';"
-                 "if(S)S.textContent='Opening page\xE2\x80\xA6';"
-                 "if(H)H.textContent='';"
-                 "if(B)B.style.width='40%';"
-                 "show();"
-             "},150);"
-         "});"
          "})();</script>";
     return h;
 }
@@ -881,7 +752,6 @@ static void handleSettings() {
     // freed as soon as the chunk is on the wire, and never has to
     // be reallocated past 65 KB.
     http.setContentLength(CONTENT_LENGTH_UNKNOWN);
-    http.sendHeader("Transfer-Encoding", "chunked");
     http.send(200, "text/html", "");
     http.sendContent(htmlHead("Settings"));
     http.sendContent(R"HTML(
